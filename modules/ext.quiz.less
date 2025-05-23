@@ -97,11 +97,11 @@
 }
 
 .quiz .question .check.correct {
-	outline: 3px solid @border-color-success;
+	outline: 3px solid limegreen;
 }
 
 .quiz .question .check.incorrect {
-	outline: 3px solid @border-color-error;
+	outline: 3px solid firebrick;
 }
 
 .quiz .question .check.correction {
@@ -182,6 +182,12 @@
 	display: none;
 }
 
+/* POZ: dropdown question styles */
+.quiz .question .quiz-dropdown.check {
+	outline-offset: -2px;
+}
+
+/* POZ: do not show correction button when printing */
 @media print {
 	.quiz .quiz-correction {
 		display: none;

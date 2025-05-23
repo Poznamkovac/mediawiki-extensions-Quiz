@@ -49,6 +49,9 @@ class Question {
 	/** @var int */
 	public $mCoef = 1;
 
+	/** @var string POZ: dropdown question pattern - matches option lines with correctness markers */
+	private $mDropdownPattern = '`^([+-]+)\s+(.*)`';
+
 	/**
 	 * @param bool $beingCorrected Identifier for quiz being corrected.
 	 * @param bool $caseSensitive Identifier for case sensitive inputs.
@@ -215,7 +218,14 @@ class Question {
 			case 'multipleChoice':
 				return $this->basicTypeParseObject( $input, 'checkbox' );
 			case 'textField':
-				return $this->textFieldParseObject( $input );
+				// POZ: Check if this is a dropdown question by looking at the first line
+				$firstLine = strtok( $input, "\n" );
+				if ( preg_match( '`\|?([^\|]+\|)+`', $firstLine ) ) {
+					return $this->dropdownParseObject( $input );
+				} else {
+					// Standard text field
+					return $this->textFieldParseObject( $input );
+				}
 			default:
 				throw new UnexpectedValueException( "Invalid type '{$this->mType}'" );
 		}
@@ -645,5 +655,164 @@ class Question {
 				'bigDisplay' => $bigDisplay,
 			]
 		);
+	}
+
+	/**
+	 * POZ: Convert a dropdown question object from quiz syntax to HTML.
+	 *
+	 * @param string $input A question object in quiz syntax
+	 * @return string A question object in HTML.
+	 */
+	private function dropdownParseObject( $input ) {
+		$raws = preg_split( '`\n`s', $input, -1, PREG_SPLIT_NO_EMPTY );
+		$output = '';
+		$lineLabels = [];
+		$options = [];
+		$correctness = []; // correctness[optionIndex][lineIndex] = true/false
+
+		// Parse the header line to get line labels
+		$headerLine = trim( $raws[0] );
+		if ( preg_match_all( '`\|([^|]+)`', $headerLine, $matches ) ) {
+			$lineLabels = array_map( 'trim', $matches[1] );
+		} else {
+			$this->setState( 'error' );
+			return '<tr class="proposal"><td>Invalid dropdown syntax</td></tr>';
+		}
+
+		$numLines = count( $lineLabels );
+
+		// Parse option lines
+		for ( $i = 1; $i < count( $raws ); $i++ ) {
+			$raw = trim( $raws[$i] );
+			if ( empty( $raw ) ) {
+				continue;
+			}
+
+			if ( preg_match( $this->mCorrectionPattern, $raw, $matches ) ) {
+				if ( $this->mBeingCorrected ) {
+					$output .= '<tr class="correction"><td colspan="2">&#x2192; ' .
+						$this->mParser->recursiveTagParse( $matches[1] ) . '</td></tr>';
+				}
+				continue;
+			}
+
+			// Parse option line: markers + option text
+			if ( preg_match( '`^([+-]+)\s+(.*)$`', $raw, $matches ) ) {
+				$markers = $matches[1];
+				$optionText = trim( $matches[2] );
+
+				// Validate marker length matches number of lines
+				if ( strlen( $markers ) !== $numLines ) {
+					$this->setState( 'error' );
+					continue;
+				}
+
+				// Empty option text is an error
+				if ( $optionText === '' ) {
+					$this->setState( 'error' );
+					$optionText = '???';
+				}
+
+				$options[] = $optionText;
+
+				// Parse correctness for this option
+				$optionCorrectness = [];
+				for ( $j = 0; $j < strlen( $markers ); $j++ ) {
+					$optionCorrectness[] = ( $markers[$j] === '+' );
+				}
+				$correctness[] = $optionCorrectness;
+			}
+		}
+
+		// Validate that we have at least one option
+		if ( empty( $options ) ) {
+			$this->setState( 'error' );
+			return '<tr class="proposal"><td>No options defined</td></tr>';
+		}
+
+		// Validate that each line has exactly one correct answer
+		for ( $lineIndex = 0; $lineIndex < $numLines; $lineIndex++ ) {
+			$correctCount = 0;
+			for ( $optIndex = 0; $optIndex < count( $options ); $optIndex++ ) {
+				if ( $correctness[$optIndex][$lineIndex] ) {
+					$correctCount++;
+				}
+			}
+			if ( $correctCount !== 1 ) {
+				$this->setState( 'error' );
+			}
+		}
+
+		// Evaluate answers if being corrected
+		if ( $this->mBeingCorrected ) {
+			$totalLines = $numLines;
+			$correctLines = 0;
+			$answeredLines = 0;
+
+			for ( $lineIndex = 0; $lineIndex < $totalLines; $lineIndex++ ) {
+				$name = 'q' . $this->mQuestionId . 'l' . $lineIndex;
+				$selected = $this->mRequest->getVal( $name );
+
+				if ( $selected !== '' && $selected !== null ) {
+					$answeredLines++;
+					$optIndex = (int)str_replace( 'opt', '', $selected );
+					if ( isset( $correctness[$optIndex] ) && $correctness[$optIndex][$lineIndex] ) {
+						$correctLines++;
+					}
+				}
+			}
+
+			// Set state based on answers
+			if ( $answeredLines === 0 ) {
+				$this->setState( 'new_NA' );
+			} elseif ( $correctLines === $totalLines && $answeredLines === $totalLines ) {
+				$this->setState( 'correct' );
+			} elseif ( $correctLines === $answeredLines && $answeredLines < $totalLines ) {
+				$this->setState( 'na_incorrect' );  // Some correct, some not answered
+			} elseif ( $correctLines > 0 ) {
+				$this->setState( 'na_incorrect' );  // Mixed correct/incorrect
+			} else {
+				$this->setState( 'incorrect' );     // All wrong
+			}
+		}
+
+		// Generate HTML for each line
+		for ( $lineIndex = 0; $lineIndex < $numLines; $lineIndex++ ) {
+			$output .= '<tr class="proposal">';
+			$output .= '<td class="line">' . $this->mParser->recursiveTagParse( $lineLabels[$lineIndex] ) . '</td>';
+			$output .= '<td class="dropdown">';
+
+			$name = 'q' . $this->mQuestionId . 'l' . $lineIndex;
+			$selected = $this->mBeingCorrected ? $this->mRequest->getVal( $name ) : '';
+
+			$dropdownClass = 'quiz-dropdown';
+
+			// Add styling based on correctness when being corrected
+			if ( $this->mBeingCorrected && $selected !== '' && $selected !== null ) {
+				$dropdownClass .= ' check';
+				$optIndex = (int)str_replace( 'opt', '', $selected );
+				if ( isset( $correctness[$optIndex] ) && $correctness[$optIndex][$lineIndex] ) {
+					$dropdownClass .= ' correct';
+				} else {
+					$dropdownClass .= ' incorrect';
+				}
+			}
+
+			$output .= '<select name="' . $name . '" class="' . $dropdownClass . '">';
+			$output .= '<option value="">' . wfMessage( 'quiz-legend-unanswered' )->text() . '</option>';
+
+			for ( $optIndex = 0; $optIndex < count( $options ); $optIndex++ ) {
+				$value = 'opt' . $optIndex;
+				$selectedAttr = ( $selected === $value ) ? ' selected="selected"' : '';
+
+				$output .= '<option value="' . $value . '"' . $selectedAttr . '>' .
+					$this->mParser->recursiveTagParse( $options[$optIndex] ) . '</option>';
+			}
+
+			$output .= '</select>';
+			$output .= '</td></tr>';
+		}
+
+		return $output;
 	}
 }

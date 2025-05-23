@@ -313,4 +313,110 @@ class QuestionTest extends QuizTestCase {
 		$this->assertEquals( $expected, $output );
 	}
 
+	public static function provideDropdownParseObject() {
+		return [
+			// Test case: Basic dropdown not being corrected
+			[
+				'0', // not being corrected
+				"| line A | line B | line C\n+-- option A\n-+- option B\n--+ option C",
+				'<tr class="proposal"><td class="line">line A</td><td class="dropdown">' .
+				'<select name="q2l0" class="quiz-dropdown">' .
+				'<option value="">Not answered</option>' .
+				'<option value="opt0">option A</option>' .
+				'<option value="opt1">option B</option>' .
+				'<option value="opt2">option C</option>' .
+				'</select></td></tr>' .
+				'<tr class="proposal"><td class="line">line B</td><td class="dropdown">' .
+				'<select name="q2l1" class="quiz-dropdown">' .
+				'<option value="">Not answered</option>' .
+				'<option value="opt0">option A</option>' .
+				'<option value="opt1">option B</option>' .
+				'<option value="opt2">option C</option>' .
+				'</select></td></tr>' .
+				'<tr class="proposal"><td class="line">line C</td><td class="dropdown">' .
+				'<select name="q2l2" class="quiz-dropdown">' .
+				'<option value="">Not answered</option>' .
+				'<option value="opt0">option A</option>' .
+				'<option value="opt1">option B</option>' .
+				'<option value="opt2">option C</option>' .
+				'</select></td></tr>',
+				[], // no request values
+				''  // expected state
+			],
+			// Test case: Basic dropdown being corrected with all correct answers
+			[
+				'1', // being corrected
+				"| line A | line B | line C\n+-- option A\n-+- option B\n--+ option C",
+				'<tr class="proposal"><td class="line">line A</td><td class="dropdown">' .
+				'<select name="q2l0" class="quiz-dropdown correct">' .
+				'<option value="">Not answered</option>' .
+				'<option value="opt0" selected="selected">option A</option>' .
+				'<option value="opt1">option B</option>' .
+				'<option value="opt2">option C</option>' .
+				'</select></td></tr>' .
+				'<tr class="proposal"><td class="line">line B</td><td class="dropdown">' .
+				'<select name="q2l1" class="quiz-dropdown correct">' .
+				'<option value="">Not answered</option>' .
+				'<option value="opt0">option A</option>' .
+				'<option value="opt1" selected="selected">option B</option>' .
+				'<option value="opt2">option C</option>' .
+				'</select></td></tr>' .
+				'<tr class="proposal"><td class="line">line C</td><td class="dropdown">' .
+				'<select name="q2l2" class="quiz-dropdown correct">' .
+				'<option value="">Not answered</option>' .
+				'<option value="opt0">option A</option>' .
+				'<option value="opt1">option B</option>' .
+				'<option value="opt2" selected="selected">option C</option>' .
+				'</select></td></tr>',
+				[ 'q2l0' => 'opt0', 'q2l1' => 'opt1', 'q2l2' => 'opt2' ], // correct answers
+				'correct'
+			],
+			// Test case: Dropdown with incorrect answers
+			[
+				'1', // being corrected
+				"| line A | line B\n+- option A\n-+ option B",
+				'<tr class="proposal"><td class="line">line A</td><td class="dropdown">' .
+				'<select name="q2l0" class="quiz-dropdown incorrect">' .
+				'<option value="">Not answered</option>' .
+				'<option value="opt0">option A</option>' .
+				'<option value="opt1" selected="selected">option B</option>' .
+				'</select></td></tr>' .
+				'<tr class="proposal"><td class="line">line B</td><td class="dropdown">' .
+				'<select name="q2l1" class="quiz-dropdown incorrect">' .
+				'<option value="">Not answered</option>' .
+				'<option value="opt0" selected="selected">option A</option>' .
+				'<option value="opt1">option B</option>' .
+				'</select></td></tr>',
+				[ 'q2l0' => 'opt1', 'q2l1' => 'opt0' ], // incorrect answers
+				'incorrect'
+			],
+			// Test case: Syntax error - mismatched marker length
+			[
+				'1', // being corrected
+				"| line A | line B | line C\n+- option A\n-+ option B",
+				'<tr class="proposal"><td>No options defined</td></tr>',
+				[],
+				'error'
+			]
+		];
+	}
+
+	/**
+	 * @dataProvider provideDropdownParseObject
+	 * @covers \MediaWiki\Extension\Quiz\Question::dropdownParseObject
+	 */
+	public function testDropdownParseObject( $beingCorrected, $input, $expected, $requestValues, $expectedState ) {
+		$this->question = $this->getQuestion( $beingCorrected, 1, 2 );
+		$this->question->mType = 'textField'; // Set type to trigger dropdown detection
+		
+		// Set request values
+		foreach ( $requestValues as $name => $value ) {
+			$this->question->mRequest->setVal( $name, $value );
+		}
+		
+		$output = $this->question->dropdownParseObject( $input );
+		$this->assertEquals( $expected, $output );
+		$this->assertEquals( $expectedState, $this->question->getState() );
+	}
+
 }
