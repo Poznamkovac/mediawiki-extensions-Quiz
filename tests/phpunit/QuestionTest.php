@@ -341,54 +341,98 @@ class QuestionTest extends QuizTestCase {
 				'<option value="opt2">option C</option>' .
 				'</select></td></tr>',
 				[], // no request values
-				''  // expected state
+				'',  // expected state
+				false // shuffling disabled
 			],
 			// Test case: Basic dropdown being corrected with all correct answers
 			[
 				'1', // being corrected
 				"| line A | line B | line C\n+-- option A\n-+- option B\n--+ option C",
 				'<tr class="proposal"><td class="line">line A</td><td class="dropdown">' .
-				'<select name="q2l0" class="quiz-dropdown correct">' .
+				'<select name="q2l0" class="quiz-dropdown check correct">' .
 				'<option value="">Not answered</option>' .
 				'<option value="opt0" selected="selected">option A</option>' .
 				'<option value="opt1">option B</option>' .
 				'<option value="opt2">option C</option>' .
 				'</select></td></tr>' .
 				'<tr class="proposal"><td class="line">line B</td><td class="dropdown">' .
-				'<select name="q2l1" class="quiz-dropdown correct">' .
+				'<select name="q2l1" class="quiz-dropdown check correct">' .
 				'<option value="">Not answered</option>' .
 				'<option value="opt0">option A</option>' .
 				'<option value="opt1" selected="selected">option B</option>' .
 				'<option value="opt2">option C</option>' .
 				'</select></td></tr>' .
 				'<tr class="proposal"><td class="line">line C</td><td class="dropdown">' .
-				'<select name="q2l2" class="quiz-dropdown correct">' .
+				'<select name="q2l2" class="quiz-dropdown check correct">' .
 				'<option value="">Not answered</option>' .
 				'<option value="opt0">option A</option>' .
 				'<option value="opt1">option B</option>' .
 				'<option value="opt2" selected="selected">option C</option>' .
 				'</select></td></tr>',
 				[ 'q2l0' => 'opt0', 'q2l1' => 'opt1', 'q2l2' => 'opt2' ], // correct answers
-				'correct'
+				'correct',
+				false // shuffling disabled
 			],
-			// Test case: Dropdown with incorrect answers
+			// Test case: Dropdown with incorrect answers - should show correct answers in third column
 			[
 				'1', // being corrected
 				"| line A | line B\n+- option A\n-+ option B",
 				'<tr class="proposal"><td class="line">line A</td><td class="dropdown">' .
-				'<select name="q2l0" class="quiz-dropdown incorrect">' .
+				'<select name="q2l0" class="quiz-dropdown check incorrect">' .
 				'<option value="">Not answered</option>' .
 				'<option value="opt0">option A</option>' .
 				'<option value="opt1" selected="selected">option B</option>' .
-				'</select></td></tr>' .
+				'</select></td><td class="correction">Correct: option A</td></tr>' .
 				'<tr class="proposal"><td class="line">line B</td><td class="dropdown">' .
-				'<select name="q2l1" class="quiz-dropdown incorrect">' .
+				'<select name="q2l1" class="quiz-dropdown check incorrect">' .
 				'<option value="">Not answered</option>' .
 				'<option value="opt0" selected="selected">option A</option>' .
 				'<option value="opt1">option B</option>' .
-				'</select></td></tr>',
+				'</select></td><td class="correction">Correct: option B</td></tr>',
 				[ 'q2l0' => 'opt1', 'q2l1' => 'opt0' ], // incorrect answers
-				'incorrect'
+				'incorrect',
+				false // shuffling disabled
+			],
+			// Test case: Dropdown with no answers - should show correct answers in third column
+			[
+				'1', // being corrected
+				"| line A | line B\n+- option A\n-+ option B",
+				'<tr class="proposal"><td class="line">line A</td><td class="dropdown">' .
+				'<select name="q2l0" class="quiz-dropdown">' .
+				'<option value="">Not answered</option>' .
+				'<option value="opt0">option A</option>' .
+				'<option value="opt1">option B</option>' .
+				'</select></td><td class="correction">Correct: option A</td></tr>' .
+				'<tr class="proposal"><td class="line">line B</td><td class="dropdown">' .
+				'<select name="q2l1" class="quiz-dropdown">' .
+				'<option value="">Not answered</option>' .
+				'<option value="opt0">option A</option>' .
+				'<option value="opt1">option B</option>' .
+				'</select></td><td class="correction">Correct: option B</td></tr>',
+				[], // no answers
+				'new_NA',
+				false // shuffling disabled
+			],
+			// Test case: Dropdown with shuffling enabled and specific order
+			[
+				'1', // being corrected
+				"| line A | line B\n+- option A\n-+ option B",
+				'<input type="hidden" name="2|optorder" value="1 0" />' .
+				'<tr class="proposal"><td class="line">line A</td><td class="dropdown">' .
+				'<select name="q2l0" class="quiz-dropdown check correct">' .
+				'<option value="">Not answered</option>' .
+				'<option value="opt0" selected="selected">option B</option>' .
+				'<option value="opt1">option A</option>' .
+				'</select></td></tr>' .
+				'<tr class="proposal"><td class="line">line B</td><td class="dropdown">' .
+				'<select name="q2l1" class="quiz-dropdown check correct">' .
+				'<option value="">Not answered</option>' .
+				'<option value="opt0">option B</option>' .
+				'<option value="opt1" selected="selected">option A</option>' .
+				'</select></td></tr>',
+				[ 'q2l0' => 'opt0', 'q2l1' => 'opt1', '2|optorder' => '1 0' ], // shuffled correct answers
+				'correct',
+				true // shuffling enabled
 			],
 			// Test case: Syntax error - mismatched marker length
 			[
@@ -396,7 +440,8 @@ class QuestionTest extends QuizTestCase {
 				"| line A | line B | line C\n+- option A\n-+ option B",
 				'<tr class="proposal"><td>No options defined</td></tr>',
 				[],
-				'error'
+				'error',
+				false // shuffling disabled
 			]
 		];
 	}
@@ -405,9 +450,10 @@ class QuestionTest extends QuizTestCase {
 	 * @dataProvider provideDropdownParseObject
 	 * @covers \MediaWiki\Extension\Quiz\Question::dropdownParseObject
 	 */
-	public function testDropdownParseObject( $beingCorrected, $input, $expected, $requestValues, $expectedState ) {
+	public function testDropdownParseObject( $beingCorrected, $input, $expected, $requestValues, $expectedState, $shuffling ) {
 		$this->question = $this->getQuestion( $beingCorrected, 1, 2 );
 		$this->question->mType = 'textField'; // Set type to trigger dropdown detection
+		$this->question->shuffleAnswers = $shuffling; // Set shuffling parameter
 		
 		// Set request values
 		foreach ( $requestValues as $name => $value ) {

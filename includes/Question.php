@@ -690,7 +690,7 @@ class Question {
 
 			if ( preg_match( $this->mCorrectionPattern, $raw, $matches ) ) {
 				if ( $this->mBeingCorrected ) {
-					$output .= '<tr class="correction"><td colspan="2">&#x2192; ' .
+					$output .= '<tr class="correction"><td colspan="3">&#x2192; ' .
 						$this->mParser->recursiveTagParse( $matches[1] ) . '</td></tr>';
 				}
 				continue;
@@ -743,6 +743,39 @@ class Question {
 			}
 		}
 
+		// Handle option shuffling
+		$optionOrder = '';
+		if ( $this->shuffleAnswers ) {
+			if ( $this->mBeingCorrected ) {
+				// Retrieve saved order when being corrected
+				$optionOrder = $this->mRequest->getVal( $this->mQuestionId . '|optorder', '' );
+				
+				// Validate the order
+				$tempOrder = explode( ' ', $optionOrder );
+				if ( count( $tempOrder ) !== count( $options ) ) {
+					// Invalid order, reset to default
+					$optionOrder = '';
+					for ( $i = 0; $i < count( $options ); $i++ ) {
+						$optionOrder .= ' ' . $i;
+					}
+					$optionOrder = ltrim( $optionOrder );
+				}
+			} else {
+				// Create shuffled order for new quiz
+				$orderArray = range( 0, count( $options ) - 1 );
+				shuffle( $orderArray );
+				$optionOrder = implode( ' ', $orderArray );
+			}
+		} else {
+			// No shuffling, use default order
+			for ( $i = 0; $i < count( $options ); $i++ ) {
+				$optionOrder .= ' ' . $i;
+			}
+			$optionOrder = ltrim( $optionOrder );
+		}
+
+		$shuffledOrder = explode( ' ', $optionOrder );
+
 		// Evaluate answers if being corrected
 		if ( $this->mBeingCorrected ) {
 			$totalLines = $numLines;
@@ -756,7 +789,9 @@ class Question {
 				if ( $selected !== '' && $selected !== null ) {
 					$answeredLines++;
 					$optIndex = (int)str_replace( 'opt', '', $selected );
-					if ( isset( $correctness[$optIndex] ) && $correctness[$optIndex][$lineIndex] ) {
+					// Map shuffled index back to original index
+					$originalOptIndex = (int)$shuffledOrder[$optIndex];
+					if ( isset( $correctness[$originalOptIndex] ) && $correctness[$originalOptIndex][$lineIndex] ) {
 						$correctLines++;
 					}
 				}
@@ -776,6 +811,11 @@ class Question {
 			}
 		}
 
+		// Add hidden input to store option order if shuffling is enabled
+		if ( $this->shuffleAnswers ) {
+			$output .= Html::input( $this->mQuestionId . '|optorder', $optionOrder, 'hidden' );
+		}
+
 		// Generate HTML for each line
 		for ( $lineIndex = 0; $lineIndex < $numLines; $lineIndex++ ) {
 			$output .= '<tr class="proposal">';
@@ -786,13 +826,17 @@ class Question {
 			$selected = $this->mBeingCorrected ? $this->mRequest->getVal( $name ) : '';
 
 			$dropdownClass = 'quiz-dropdown';
+			$isCorrect = false;
 
 			// Add styling based on correctness when being corrected
 			if ( $this->mBeingCorrected && $selected !== '' && $selected !== null ) {
 				$dropdownClass .= ' check';
 				$optIndex = (int)str_replace( 'opt', '', $selected );
-				if ( isset( $correctness[$optIndex] ) && $correctness[$optIndex][$lineIndex] ) {
+				// Map shuffled index back to original index
+				$originalOptIndex = (int)$shuffledOrder[$optIndex];
+				if ( isset( $correctness[$originalOptIndex] ) && $correctness[$originalOptIndex][$lineIndex] ) {
 					$dropdownClass .= ' correct';
+					$isCorrect = true;
 				} else {
 					$dropdownClass .= ' incorrect';
 				}
@@ -801,16 +845,37 @@ class Question {
 			$output .= '<select name="' . $name . '" class="' . $dropdownClass . '">';
 			$output .= '<option value="">' . wfMessage( 'quiz-legend-unanswered' )->text() . '</option>';
 
-			for ( $optIndex = 0; $optIndex < count( $options ); $optIndex++ ) {
-				$value = 'opt' . $optIndex;
+			// Use shuffled order for options
+			for ( $shuffledIndex = 0; $shuffledIndex < count( $options ); $shuffledIndex++ ) {
+				$originalIndex = (int)$shuffledOrder[$shuffledIndex];
+				$value = 'opt' . $shuffledIndex;
 				$selectedAttr = ( $selected === $value ) ? ' selected="selected"' : '';
 
 				$output .= '<option value="' . $value . '"' . $selectedAttr . '>' .
-					$this->mParser->recursiveTagParse( $options[$optIndex] ) . '</option>';
+					$this->mParser->recursiveTagParse( $options[$originalIndex] ) . '</option>';
 			}
 
 			$output .= '</select>';
-			$output .= '</td></tr>';
+			$output .= '</td>';
+
+			// Add third column with correct answer if being corrected and answer is wrong/not answered
+			if ( $this->mBeingCorrected && !$isCorrect ) {
+				// Find the correct option for this line (using original indices)
+				$correctOption = '';
+				for ( $optIndex = 0; $optIndex < count( $options ); $optIndex++ ) {
+					if ( $correctness[$optIndex][$lineIndex] ) {
+						$correctOption = $options[$optIndex];
+						break;
+					}
+				}
+				
+				$output .= '<td class="correction">';
+				$output .= wfMessage( 'quiz-legend-correct' )->text() . ': ';
+				$output .= $this->mParser->recursiveTagParse( $correctOption );
+				$output .= '</td>';
+			}
+
+			$output .= '</tr>';
 		}
 
 		return $output;
