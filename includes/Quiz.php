@@ -217,7 +217,11 @@ class Quiz {
 		// Generates the output.
 		$templateParser = new TemplateParser( __DIR__ . '/../templates' );
 		// Determine the content of the settings table.
-		$settingsTable = $this->getSettingsTable( $templateParser );
+		if ( $this->mBeingCorrected || (!$this->mDisplaySimple && !$this->mBeingCorrected) ) {
+			$settingsTable = $this->getSettingsTable( $templateParser );
+		} else {
+			$settingsTable = null;
+		}
 
 		$quiz_score = wfMessage( 'quiz-score' )->rawParams(
 			'<span class="score">' . $this->mScore . '</span>',

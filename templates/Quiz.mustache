@@ -1,15 +1,15 @@
 <div class="quiz">
 	<form id="quiz{{ quiz.id }}" class="quizForm" method="post" action="#quiz{{ quiz.id }}">
+		{{#settingsTable }}
 		<div style="display:inline-flex">
-			{{#settingsTable }}
-				<table class="settings">{{{ . }}}</table>
-			{{/settingsTable }}
+			<table class="settings">{{{ . }}}</table>
 		</div>
+		{{/settingsTable }}
 		<input type="hidden" name="quizId" value="{{ quiz.id }}" />
 		<div class="quizQuestions">
 			{{{ quiz.questions }}}
 		</div>
-		<p>
+		<p class="quiz-correction">
 			<input type="submit" value="{{ wfMessage.quiz_correction }}"/>
 			{{#if quiz.beingCorrected }}
 				<input class="reset" type="submit" value="{{ wfMessage.quiz_reset }}">
